@@ -94,7 +94,7 @@ async function pdfToImages(buffer) {
       count++;
 
       // only first 3 pages
-      if (count >= 3) break;
+      if (count >= 1) break;
     }
 
     return images;
@@ -239,8 +239,15 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     }
 
     console.log('   Calling Groq...');
+    console.log("========== GROQ REQUEST ==========");
+    console.log("Model:", "meta-llama/llama-4-scout-17b-16e-instruct");;
+   console.log(
+   "Payload Size:",
+   Math.round(JSON.stringify(messages).length / 1024),
+   "KB"
+   );
     const completion = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
       max_tokens: 4096,
       messages
     });
@@ -254,10 +261,21 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     res.json({ success: true, data: parsed });
 
   } catch(err) {
-    console.error('❌', err.message);
- 
-    res.status(500).json({ error: err.message });
+  console.error("========== FULL ERROR ==========");
+  console.error(err);
+
+  console.error("MESSAGE:", err.message);
+  console.error("STACK:", err.stack);
+
+  if (err.response) {
+    console.error("STATUS:", err.response.status);
+    console.error("DATA:", err.response.data);
   }
+
+  res.status(500).json({
+    error: err.message
+  });
+}
 });
 
 app.post('/download-zip', async (req, res) => {
@@ -298,4 +316,8 @@ Markers : ${(data.markers||[]).length}
   archive.finalize();
 });
 
-app.listen(3737, () => console.log('\n✅  http://localhost:3737\n'));
+const PORT = process.env.PORT || 3737;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
