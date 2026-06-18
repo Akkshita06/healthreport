@@ -33,7 +33,10 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 app.use(express.json({ limit: '10mb' }));
 
 // ── Pure-JS PDF text extraction (no native deps) ─────────────────────────────
