@@ -41,45 +41,69 @@ app.use(express.json({ limit: '10mb' }));
 
 // ── Pure-JS PDF text extraction (no native deps) ─────────────────────────────
 async function extractPdfText(buffer) {
-  // pdfjs-dist v5's "legacy" Node build only ships as ESM (pdf.mjs), so it
-  // must be loaded with a dynamic import() even from this CommonJS file.
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const uint8 = new Uint8Array(buffer);
-  const pdf = await pdfjsLib.getDocument({ data: uint8, verbosity: 0 }).promise;
-  const numPages = Math.min(pdf.numPages, 20);
-  let text = '';
-  for (let i = 1; i <= numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    // Reconstruct lines from text items preserving layout
-    const items = content.items;
-    let lastY = null;
-    for (const item of items) {
-      const y = item.transform ? item.transform[5] : 0;
-      if (lastY !== null && Math.abs(y - lastY) > 5) text += '\n';
-      text += item.str + ' ';
-      lastY = y;
+  try {
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useWorkerFetch: false,
+      isEvalSupported: false
+    });
+
+    const pdf = await loadingTask.promise;
+
+    let text = '';
+    const maxPages = Math.min(pdf.numPages, 10);
+
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+
+      const pageText = content.items
+        .map(item => item.str || '')
+        .join(' ');
+
+      text += pageText + '\n\n';
     }
-    text += '\n\n';
+
+    return text.trim();
+
+  } catch (err) {
+    console.error('PDF TEXT EXTRACTION FAILED');
+    console.error(err);
+    return '';
   }
-  return text.trim();
 }
 
 // ── Convert PDF pages to JPEG using pdf-to-img (pure wasm, no native) ────────
 async function pdfToImages(buffer) {
-  // pdf-to-img v6+ ships as ESM-only, so it must be loaded with a dynamic
-  // import() even from this CommonJS file — require() throws
-  // "require() cannot be used on an ESM graph with top-level await".
-  const { pdf } = await import('pdf-to-img');
-  const images = [];
-  const doc = await pdf(buffer, { scale: 2 });
-  let pageNum = 0;
-  for await (const pageBuffer of doc) {
-    images.push(pageBuffer.toString('base64'));
-    pageNum++;
-    if (pageNum >= 8) break;
+  try {
+    const { pdf } = await import('pdf-to-img');
+
+    const images = [];
+
+    const document = await pdf(buffer, {
+      scale: 1
+    });
+
+    let count = 0;
+
+    for await (const page of document) {
+      images.push(page.toString('base64'));
+
+      count++;
+
+      // only first 3 pages
+      if (count >= 3) break;
+    }
+
+    return images;
+
+  } catch (err) {
+    console.error('PDF IMAGE CONVERSION FAILED');
+    console.error(err);
+    throw err;
   }
-  return images;
 }
 
 const systemPrompt = `You are a medical data extraction specialist. Extract every blood test value from the report and return ONLY valid JSON — no markdown, no backticks, no explanation.
@@ -130,6 +154,12 @@ app.get('/config-status', (req, res) => {
 
 app.post('/extract', upload.single('file'), async (req, res) => {
   const file = req.file;
+  console.log('========================');
+  console.log('UPLOAD RECEIVED');
+  console.log('Name:', file?.originalname);
+  console.log('Size:', file?.size);
+  console.log('Type:', file?.mimetype);
+  console.log('========================');
   try {
     const overrideKey = (req.headers['x-api-key'] && req.headers['x-api-key'].trim()) || '';
     const apiKey = overrideKey || DEFAULT_API_KEY;
@@ -160,7 +190,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         console.log('   Text extraction error:', e.message);
       }
 
-      if (text.length > 300) {
+      if (text && text.length > 100){
         console.log('   → Text strategy');
         messages = [
           { role: 'system', content: systemPrompt },
@@ -173,10 +203,11 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         try {
           images = await pdfToImages(fileBuffer);
           console.log(`   Rendered ${images.length} pages`);
-        } catch(e) {
-          console.log('   Image render error:', e.message);
-          throw new Error('PDF could not be read as text or images. Is it password-protected?');
-        }
+        } } catch(e) {
+            console.error('PDF IMAGE CONVERSION FAILED');
+            console.error(e);
+            throw e;
+          }
 
         if (!images.length) throw new Error('PDF has no renderable pages.');
 
@@ -209,7 +240,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
 
     console.log('   Calling Groq...');
     const completion = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
       max_tokens: 4096,
       messages
     });
