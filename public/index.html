@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blood Report Extractor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #f8f7f4; color: #1a1a1a; min-height: 100vh; }
+.container { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem; }
+h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+.subtitle { font-size: 14px; color: #666; margin-bottom: 2rem; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.25rem; }
+label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; font-weight: 500; }
+input[type=text], input[type=password] {
+  width: 100%; padding: 8px 12px; border: 0.5px solid rgba(0,0,0,0.2);
+  border-radius: 8px; font-size: 14px; background: #fff; color: #1a1a1a; outline: none;
+}
+input[type=text]:focus, input[type=password]:focus { border-color: rgba(0,0,0,0.45); }
+.drop-zone {
+  border: 1.5px dashed rgba(0,0,0,0.2); border-radius: 10px;
+  padding: 2.5rem 1rem; text-align: center; cursor: pointer;
+  transition: all 0.15s; background: #fafafa;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: #378add; background: #e6f1fb; }
+.drop-zone .icon { font-size: 32px; margin-bottom: 0.5rem; }
+.drop-zone p { font-size: 14px; color: #555; }
+.drop-zone span { font-size: 12px; color: #888; display: block; margin-top: 4px; }
+input[type=file] { display: none; }
+.file-name { font-size: 13px; color: #185fa5; margin-top: 10px; font-weight: 500; }
+button {
+  background: #1a1a1a; color: #fff; border: none; border-radius: 8px;
+  padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.15s;
+}
+button:hover { opacity: 0.82; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-sec { background: transparent; color: #1a1a1a; border: 0.5px solid rgba(0,0,0,0.25); }
+.btn-sec:hover { background: #f0f0f0; opacity: 1; }
+.status { font-size: 13px; color: #555; margin-top: 10px; min-height: 20px; }
+.status.error { color: #a32d2d; }
+.status.success { color: #0f6e56; }
+.progress-bar { height: 3px; background: #e5e5e5; border-radius: 99px; margin-top: 12px; overflow: hidden; display: none; }
+.progress-fill { height: 100%; background: #378add; border-radius: 99px; transition: width 0.3s; width: 0%; }
+.results-section { display: none; }
+.results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.results-header h2 { font-size: 16px; font-weight: 500; }
+.badge { background: #eaf3de; color: #3b6d11; font-size: 11px; padding: 3px 9px; border-radius: 99px; font-weight: 500; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+.metric-card { background: #f8f7f4; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 8px; padding: 10px 12px; }
+.metric-name { font-size: 12px; color: #555; margin-bottom: 2px; }
+.metric-value { font-size: 17px; font-weight: 500; }
+.metric-unit { font-size: 11px; color: #888; }
+.metric-range { font-size: 11px; color: #888; margin-top: 2px; }
+.metric-flag { font-size: 10px; padding: 2px 6px; border-radius: 99px; display: inline-block; margin-top: 4px; }
+.flag-high { background: #fcebeb; color: #a32d2d; }
+.flag-low { background: #faeeda; color: #854f0b; }
+.flag-normal { background: #eaf3de; color: #3b6d11; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 1rem; }
+.summary-box { background: #e6f1fb; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #185fa5; margin-bottom: 1rem; line-height: 1.6; }
+.patient-info { font-size: 13px; color: #555; margin-bottom: 12px; }
+.patient-info b { color: #1a1a1a; }
+.api-note { font-size: 12px; color: #888; margin-top: 8px; }
+.toggle-key { font-size: 12px; color: #555; cursor: pointer; text-decoration: underline; margin-top: 6px; display: inline-block; }
+.cat-header { grid-column: 1/-1; font-size: 11px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 8px; padding-bottom: 4px; border-bottom: 0.5px solid rgba(0,0,0,0.1); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🩸 Blood Report Extractor</h1>
+  <p class="subtitle">Local server — no CORS issues. Upload PDF or image, AI extracts all values and returns a ZIP.</p>
+
+  <div class="card">
+    <label>Groq API Key</label>
+    <p class="api-note" id="keyStatus">Checking server configuration…</p>
+    <span class="toggle-key" onclick="toggleOverride()">use a different key for this request</span>
+    <div id="overrideBox" style="display:none; margin-top:10px;">
+      <input type="password" id="apiKey" placeholder="gsk_..." autocomplete="new-password" />
+      <span class="toggle-key" onclick="toggleKey()">show / hide</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Upload Blood Report</label>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📄</div>
+      <p>Drop PDF or image here, or click to browse</p>
+      <span>Supports: PDF, PNG, JPG, JPEG, WEBP</span>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp" />
+    <div class="file-name" id="fileName"></div>
+    <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="status" id="statusMsg"></div>
+    <div style="margin-top:1rem;">
+      <button id="extractBtn" onclick="extract()" disabled>Extract Blood Values</button>
+    </div>
+  </div>
+
+  <div class="card results-section" id="resultsSection">
+    <div class="results-header">
+      <h2>Extracted Results</h2>
+      <span class="badge" id="resultCount">0 markers</span>
+    </div>
+    <div class="patient-info" id="patientInfo"></div>
+    <div class="summary-box" id="summaryBox"></div>
+    <div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Blood Markers</div>
+    <div class="metrics-grid" id="metricsGrid"></div>
+    <div class="actions">
+      <button onclick="downloadZip()">⬇ Download ZIP</button>
+      <button class="btn-sec" onclick="reset()">↩ New Report</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentFile = null;
+let extractedData = null;
+let hasDefaultKey = false;
+
+fetch('/config-status').then(r => r.json()).then(s => {
+  hasDefaultKey = !!s.hasDefaultKey;
+  document.getElementById('apiKey').value = ''; // clear any browser-autofilled leftover value
+  const el = document.getElementById('keyStatus');
+  if (hasDefaultKey) {
+    el.textContent = '✓ Using the default key configured on this server. You don\'t need to enter one.';
+  } else {
+    el.innerHTML = '⚠ No default key configured. Add one to the .env file in this project, or enter one below for this request. <a href="https://console.groq.com/keys" target="_blank">Get a free key →</a>';
+    document.getElementById('overrideBox').style.display = 'block';
+  }
+}).catch(() => {
+  document.getElementById('keyStatus').textContent = 'Could not check server configuration.';
+});
+
+function toggleOverride() {
+  const box = document.getElementById('overrideBox');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(f) {
+  currentFile = f;
+  document.getElementById('fileName').textContent = '📎 ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)';
+  setStatus('Ready. Click Extract to analyse.', '');
+  document.getElementById('extractBtn').disabled = false;
+}
+
+function toggleKey() {
+  const k = document.getElementById('apiKey');
+  k.type = k.type === 'password' ? 'text' : 'password';
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status' + (type ? ' ' + type : '');
+}
+
+function setProgress(pct) {
+  const bar = document.getElementById('progressBar');
+  const fill = document.getElementById('progressFill');
+  bar.style.display = 'block';
+  fill.style.width = pct + '%';
+  if (pct >= 100) setTimeout(() => bar.style.display = 'none', 600);
+}
+
+async function extract() {
+  const apiKey = (document.getElementById('apiKey').value || '').trim();
+  if (!hasDefaultKey && !apiKey) { setStatus('No default key configured — enter a Groq API key first.', 'error'); return; }
+  if (!currentFile) { setStatus('Upload a file first.', 'error'); return; }
+
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('resultsSection').style.display = 'none';
+  setStatus('Uploading and extracting...', '');
+  setProgress(20);
+
+  const formData = new FormData();
+  formData.append('file', currentFile);
+
+  try {
+    setProgress(40);
+    const headers = {};
+    if (apiKey) headers['x-api-key'] = apiKey;
+    const res = await fetch('/extract', {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+    setProgress(80);
+
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error || 'Server error');
+
+    extractedData = json.data;
+    setProgress(100);
+    renderResults(json.data);
+    setStatus('Done! ' + json.data.markers.length + ' markers extracted.', 'success');
+  } catch(e) {
+    setStatus('Error: ' + e.message, 'error');
+    setProgress(0);
+    document.getElementById('progressBar').style.display = 'none';
+  }
+
+  document.getElementById('extractBtn').disabled = false;
+}
+
+function renderResults(data) {
+  const sec = document.getElementById('resultsSection');
+  sec.style.display = 'block';
+  document.getElementById('resultCount').textContent = data.markers.length + ' markers';
+  document.getElementById('summaryBox').textContent = data.summary || '';
+
+  const p = data.patient;
+  let html = '';
+  if (p.name) html += `<b>${p.name}</b>`;
+  if (p.age) html += ` &nbsp;·&nbsp; Age: <b>${p.age}</b>`;
+  if (p.gender) html += ` &nbsp;·&nbsp; <b>${p.gender}</b>`;
+  if (p.report_date) html += ` &nbsp;·&nbsp; <b>${p.report_date}</b>`;
+  if (p.lab_name) html += ` &nbsp;·&nbsp; ${p.lab_name}`;
+  document.getElementById('patientInfo').innerHTML = html;
+
+  const grid = document.getElementById('metricsGrid');
+  grid.innerHTML = '';
+  const grouped = {};
+  data.markers.forEach(m => { const c = m.category||'Other'; if(!grouped[c]) grouped[c]=[]; grouped[c].push(m); });
+
+  Object.entries(grouped).forEach(([cat, markers]) => {
+    const h = document.createElement('div');
+    h.className = 'cat-header'; h.textContent = cat;
+    grid.appendChild(h);
+    markers.forEach(m => {
+      const card = document.createElement('div');
+      card.className = 'metric-card';
+      const fc = m.status === 'high'||m.status === 'critical_high' ? 'flag-high' : m.status === 'low'||m.status === 'critical_low' ? 'flag-low' : 'flag-normal';
+      const fl = m.status === 'critical_high' ? '⚠ Critical High' : m.status === 'high' ? '↑ High' : m.status === 'critical_low' ? '⚠ Critical Low' : m.status === 'low' ? '↓ Low' : '✓ Normal';
+      card.innerHTML = `
+        <div class="metric-name">${m.name}${m.short_name && m.short_name!==m.name ? ` <span style="color:#aaa">(${m.short_name})</span>` : ''}</div>
+        <div class="metric-value">${m.value??'—'} <span class="metric-unit">${m.unit||''}</span></div>
+        ${m.reference_text ? `<div class="metric-range">Ref: ${m.reference_text}</div>` : ''}
+        <span class="metric-flag ${fc}">${fl}</span>`;
+      grid.appendChild(card);
+    });
+  });
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function downloadZip() {
+  if (!extractedData) return;
+  const res = await fetch('/download-zip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: extractedData })
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'blood_report_' + new Date().toISOString().slice(0,10) + '.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function reset() {
+  currentFile = null; extractedData = null;
+  document.getElementById('fileName').textContent = '';
+  document.getElementById('statusMsg').textContent = '';
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('progressBar').style.display = 'none';
+  fileInput.value = '';
+}
+</script>
+</body>
+</html>
