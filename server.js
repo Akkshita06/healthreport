@@ -203,7 +203,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         try {
           images = await pdfToImages(fileBuffer);
           console.log(`   Rendered ${images.length} pages`);
-        } } catch(e) {
+        } catch(e) {
             console.error('PDF IMAGE CONVERSION FAILED');
             console.error(e);
             throw e;
