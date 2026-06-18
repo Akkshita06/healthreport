@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const archiver = require('archiver');
 const Groq = require('groq-sdk');
 
@@ -25,7 +27,11 @@ if (HAS_DEFAULT_KEY) {
 }
 
 const app = express();
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 app.use(express.static('public'));
 app.use(express.json({ limit: '10mb' }));
@@ -133,7 +139,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     if (!file)   return res.status(400).json({ error: 'No file uploaded' });
 
     const groq = new Groq({ apiKey });
-    const fileBuffer = fs.readFileSync(file.path);
+    const fileBuffer = file.buffer;
     const mimeType = (file.mimetype || '').toLowerCase();
     const isPDF = mimeType === 'application/pdf' || file.originalname?.toLowerCase().endsWith('.pdf');
 
@@ -209,13 +215,13 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     const parsed = parseAIResponse(rawText);
     if (!Array.isArray(parsed.markers)) parsed.markers = [];
 
-    fs.unlinkSync(file.path);
+    
     console.log(`✅ ${parsed.markers.length} markers extracted`);
     res.json({ success: true, data: parsed });
 
   } catch(err) {
     console.error('❌', err.message);
-    if (file) try { fs.unlinkSync(file.path); } catch(_) {}
+ 
     res.status(500).json({ error: err.message });
   }
 });
